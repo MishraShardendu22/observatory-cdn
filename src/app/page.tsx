@@ -15,6 +15,7 @@ interface CloudinaryImage {
   folder?: string;
   folder_path?: string;
   filename?: string;
+  title?: string;
   relative_path?: string;
 }
 
@@ -77,6 +78,10 @@ export default function Home() {
   } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [editingImageId, setEditingImageId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>("");
+  const [savingTitle, setSavingTitle] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -98,6 +103,59 @@ export default function Home() {
     }
   };
 
+  const handleRename = async (public_id: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      setEditingImageId(null);
+      return;
+    }
+    setSavingTitle(true);
+    try {
+      const res = await fetch("/api/images", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_id, title: newTitle.trim() }),
+      });
+      if (res.ok) {
+        setImages((prev) =>
+          prev.map((img) =>
+            img.public_id === public_id
+              ? { ...img, title: newTitle.trim() }
+              : img,
+          ),
+        );
+      }
+    } catch (err) {
+      console.error("Rename failed:", err);
+    } finally {
+      setSavingTitle(false);
+      setEditingImageId(null);
+    }
+  };
+
+  const getFriendlyName = useCallback(
+    (image: CloudinaryImage, index: number): string => {
+      if (image.title?.trim()) {
+        return image.title.trim();
+      }
+      const rawName = image.filename || image.public_id.split("/").pop() || "";
+      const nameWithoutExt = rawName.replace(/\.[^/.]+$/, "");
+
+      // If name is an auto-generated random hash (14+ alphanumeric chars)
+      const isRandomHash = /^[a-z0-9_-]{14,}$/i.test(nameWithoutExt);
+      if (isRandomHash) {
+        const folderTag = image.folder
+          ? image.folder.split("/").pop()?.toUpperCase()
+          : "";
+        return folderTag
+          ? `${folderTag} Asset #${index + 1}`
+          : `Planetary Asset #${index + 1}`;
+      }
+
+      return rawName;
+    },
+    [],
+  );
+
   const fetchImages = useCallback(async () => {
     try {
       const res = await fetch("/api/images");
@@ -107,6 +165,9 @@ export default function Home() {
       }
       if (data.folders) {
         setFolders(data.folders);
+      }
+      if (data.isAuthenticated !== undefined) {
+        setIsAuthenticated(Boolean(data.isAuthenticated));
       }
     } catch (error) {
       console.error("Failed to fetch images:", error);
@@ -484,7 +545,7 @@ export default function Home() {
       // Search match
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const matchesName = (img.filename || img.public_id)
+        const matchesName = (img.title || img.filename || img.public_id)
           .toLowerCase()
           .includes(query);
         const matchesRelPath = (img.relative_path || "")
@@ -542,87 +603,110 @@ export default function Home() {
               <span>{folders.length} folders</span>
             </div>
 
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="text-xs px-3.5 py-2 rounded-xl bg-[#1e1a16] text-[#b9ae9d] hover:text-[#f3ebdd] hover:bg-[#27221c] border border-[#2f2923] transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              {loggingOut ? "Signing out..." : "Sign Out"}
-            </button>
+            {isAuthenticated ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="text-xs px-3.5 py-2 rounded-xl bg-[#1e1a16] text-[#b9ae9d] hover:text-[#f3ebdd] hover:bg-[#27221c] border border-[#2f2923] transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {loggingOut ? "Signing out..." : "Sign Out"}
+              </button>
+            ) : (
+              <a
+                href="/login"
+                className="text-xs px-3.5 py-2 rounded-xl bg-[#d9a55b]/10 text-[#d9a55b] hover:bg-[#d9a55b]/20 border border-[#d9a55b]/30 transition-all font-medium flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                  />
+                </svg>
+                <span>Admin Sign In</span>
+              </a>
+            )}
           </div>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-        {/* Upload Hub */}
-        <section className="bg-[#161311] border border-[#2f2923] rounded-2xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-base font-semibold text-[#f3ebdd] flex items-center gap-2">
-                <span>Upload Assets</span>
-                <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-[#d9a55b]/10 text-[#d9a55b] border border-[#d9a55b]/20">
-                  Folder Structure Preserved
-                </span>
-                <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-[#4caf7d]/10 text-[#4caf7d] border border-[#4caf7d]/20">
-                  SQLite Indexed
-                </span>
-              </h2>
-              <p className="text-xs text-[#8e8374] mt-1">
-                Upload individual files, select an entire directory, or drag &
-                drop nested folders to preserve structure on disk and in
-                database.
-              </p>
+        {/* Upload Hub - Only for authenticated admins */}
+        {isAuthenticated && (
+          <section className="bg-[#161311] border border-[#2f2923] rounded-2xl p-6 sm:p-8 space-y-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold text-[#f3ebdd] flex items-center gap-2">
+                  <span>Upload Assets</span>
+                  <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-[#d9a55b]/10 text-[#d9a55b] border border-[#d9a55b]/20">
+                    Folder Structure Preserved
+                  </span>
+                  <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-[#4caf7d]/10 text-[#4caf7d] border border-[#4caf7d]/20">
+                    SQLite Indexed
+                  </span>
+                </h2>
+                <p className="text-xs text-[#8e8374] mt-1">
+                  Upload individual files, select an entire directory, or drag &
+                  drop nested folders to preserve structure on disk and in
+                  database.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="custom-folder-input"
+                  className="text-xs text-[#8e8374] shrink-0"
+                >
+                  Default Folder:
+                </label>
+                <input
+                  id="custom-folder-input"
+                  type="text"
+                  value={customFolder}
+                  onChange={(e) => setCustomFolder(e.target.value)}
+                  placeholder="e.g. Design/assets"
+                  className="w-44 text-xs px-3 py-1.5 bg-[#1e1a16] border border-[#2f2923] rounded-lg text-[#f3ebdd] placeholder-[#8e8374] focus:outline-none focus:border-[#d9a55b]"
+                />
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="custom-folder-input"
-                className="text-xs text-[#8e8374] shrink-0"
-              >
-                Default Folder:
-              </label>
-              <input
-                id="custom-folder-input"
-                type="text"
-                value={customFolder}
-                onChange={(e) => setCustomFolder(e.target.value)}
-                placeholder="e.g. Design/assets"
-                className="w-44 text-xs px-3 py-1.5 bg-[#1e1a16] border border-[#2f2923] rounded-lg text-[#f3ebdd] placeholder-[#8e8374] focus:outline-none focus:border-[#d9a55b]"
-              />
-            </div>
-          </div>
+            {/* Hidden inputs */}
+            <input
+              ref={fileInputRef}
+              id="file-input"
+              type="file"
+              accept="image/*,.avif,.heic,.heif,.webp,.svg,.bmp,.tiff"
+              multiple
+              onChange={handleFilesSelected}
+              className="hidden"
+            />
 
-          {/* Hidden inputs */}
-          <input
-            ref={fileInputRef}
-            id="file-input"
-            type="file"
-            accept="image/*,.avif,.heic,.heif,.webp,.svg,.bmp,.tiff"
-            multiple
-            onChange={handleFilesSelected}
-            className="hidden"
-          />
+            <input
+              ref={folderInputRef}
+              id="folder-input"
+              type="file"
+              // @ts-expect-error webkitdirectory is standard in browsers but non-standard in React HTMLAttributes
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={handleFolderSelected}
+              className="hidden"
+            />
 
-          <input
-            ref={folderInputRef}
-            id="folder-input"
-            type="file"
-            // @ts-expect-error webkitdirectory is standard in browsers but non-standard in React HTMLAttributes
-            webkitdirectory=""
-            directory=""
-            multiple
-            onChange={handleFolderSelected}
-            className="hidden"
-          />
-
-          {/* Dropzone */}
-          <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            className={`
+            {/* Dropzone */}
+            <div
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              className={`
               relative border-2 border-dashed rounded-xl p-8 sm:p-10 text-center transition-all duration-200
               ${
                 dragActive
@@ -631,89 +715,32 @@ export default function Home() {
               }
               ${uploading ? "opacity-60 pointer-events-none" : ""}
             `}
-          >
-            <div className="max-w-md mx-auto space-y-4">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-[#1e1a16] border border-[#2f2923] flex items-center justify-center text-[#d9a55b] shadow-inner">
-                {uploading ? (
-                  <svg
-                    className="w-7 h-7 animate-spin text-[#d9a55b]"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="w-7 h-7"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                    />
-                  </svg>
-                )}
-              </div>
-
-              <div>
-                <p className="text-sm font-medium text-[#f3ebdd]">
-                  {uploading
-                    ? "Uploading assets to CDN & Local Archive..."
-                    : "Drag and drop images or whole folders here"}
-                </p>
-                <p className="text-xs text-[#8e8374] mt-1">
-                  Preserves subfolder hierarchy, stores files locally & indexes
-                  in SQLite
-                </p>
-              </div>
-
-              {/* Action Buttons */}
-              {!uploading && (
-                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-xs font-semibold px-4 py-2.5 rounded-xl bg-[#d9a55b] hover:bg-[#e6b56c] active:bg-[#c59146] text-[#0e0c0a] transition-all shadow-md cursor-pointer flex items-center gap-2"
-                  >
+            >
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-[#1e1a16] border border-[#2f2923] flex items-center justify-center text-[#d9a55b] shadow-inner">
+                  {uploading ? (
                     <svg
-                      className="w-4 h-4"
+                      className="w-7 h-7 animate-spin text-[#d9a55b]"
                       fill="none"
-                      stroke="currentColor"
                       viewBox="0 0 24 24"
                     >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
                       <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                       />
                     </svg>
-                    <span>Upload Images</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => folderInputRef.current?.click()}
-                    className="text-xs font-medium px-4 py-2.5 rounded-xl bg-[#1e1a16] hover:bg-[#27221c] border border-[#2f2923] hover:border-[#413930] text-[#f3ebdd] transition-all cursor-pointer flex items-center gap-2"
-                  >
+                  ) : (
                     <svg
-                      className="w-4 h-4 text-[#d9a55b]"
+                      className="w-7 h-7"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -721,43 +748,101 @@ export default function Home() {
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth={2}
+                        strokeWidth={1.5}
                         d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
                       />
                     </svg>
-                    <span>Upload Entire Folder</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Upload Progress Bar */}
-          {uploadProgress && (
-            <div className="bg-[#1e1a16] border border-[#2f2923] rounded-xl p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#f3ebdd] font-medium truncate max-w-md">
-                  Uploading: {uploadProgress.currentName}
-                </span>
-                <span className="text-[#d9a55b] font-mono">
-                  {uploadProgress.current} / {uploadProgress.total} (
-                  {Math.round(
-                    (uploadProgress.current / uploadProgress.total) * 100,
                   )}
-                  %)
-                </span>
-              </div>
-              <div className="w-full bg-[#161311] h-2 rounded-full overflow-hidden border border-[#2f2923]">
-                <div
-                  className="bg-[#d9a55b] h-full transition-all duration-200"
-                  style={{
-                    width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`,
-                  }}
-                />
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-[#f3ebdd]">
+                    {uploading
+                      ? "Uploading assets to CDN & Local Archive..."
+                      : "Drag and drop images or whole folders here"}
+                  </p>
+                  <p className="text-xs text-[#8e8374] mt-1">
+                    Preserves subfolder hierarchy, stores files locally &
+                    indexes in SQLite
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                {!uploading && (
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs font-semibold px-4 py-2.5 rounded-xl bg-[#d9a55b] hover:bg-[#e6b56c] active:bg-[#c59146] text-[#0e0c0a] transition-all shadow-md cursor-pointer flex items-center gap-2"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                        />
+                      </svg>
+                      <span>Upload Images</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => folderInputRef.current?.click()}
+                      className="text-xs font-medium px-4 py-2.5 rounded-xl bg-[#1e1a16] hover:bg-[#27221c] border border-[#2f2923] hover:border-[#413930] text-[#f3ebdd] transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <svg
+                        className="w-4 h-4 text-[#d9a55b]"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                        />
+                      </svg>
+                      <span>Upload Entire Folder</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </section>
+
+            {/* Upload Progress Bar */}
+            {uploadProgress && (
+              <div className="bg-[#1e1a16] border border-[#2f2923] rounded-xl p-4 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#f3ebdd] font-medium truncate max-w-md">
+                    Uploading: {uploadProgress.currentName}
+                  </span>
+                  <span className="text-[#d9a55b] font-mono">
+                    {uploadProgress.current} / {uploadProgress.total} (
+                    {Math.round(
+                      (uploadProgress.current / uploadProgress.total) * 100,
+                    )}
+                    %)
+                  </span>
+                </div>
+                <div className="w-full bg-[#161311] h-2 rounded-full overflow-hidden border border-[#2f2923]">
+                  <div
+                    className="bg-[#d9a55b] h-full transition-all duration-200"
+                    style={{
+                      width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Gallery Controls & Navigation */}
         <section className="space-y-4">
@@ -998,14 +1083,16 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredImages.map((image) => {
-              const displayName =
-                image.filename || image.public_id.split("/").pop() || "image";
+            {filteredImages.map((image, index) => {
+              const friendlyName = getFriendlyName(image, index);
+              const isEditing = editingImageId === image.public_id;
               const targetUrl =
                 image.secure_url || image.local_url || image.url;
               const displayRelPath =
                 image.relative_path ||
-                (image.folder ? `${image.folder}/${displayName}` : displayName);
+                (image.folder
+                  ? `${image.folder}/${image.filename || friendlyName}`
+                  : image.filename || friendlyName);
 
               return (
                 <div
@@ -1026,7 +1113,7 @@ export default function Home() {
                   >
                     <img
                       src={targetUrl}
-                      alt={displayName}
+                      alt={friendlyName}
                       loading="lazy"
                       className="max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
                     />
@@ -1049,12 +1136,100 @@ export default function Home() {
                   {/* Metadata & Actions */}
                   <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                     <div className="space-y-1">
-                      <p
-                        className="text-xs font-semibold text-[#f3ebdd] truncate"
-                        title={displayName}
-                      >
-                        {displayName}
-                      </p>
+                      {isEditing ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleRename(image.public_id, editingTitle);
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            autoFocus
+                            disabled={savingTitle}
+                            placeholder="Enter asset title"
+                            className="w-full text-xs px-2 py-1 bg-[#1e1a16] border border-[#d9a55b] rounded-lg text-[#f3ebdd] focus:outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={savingTitle}
+                            title="Save title"
+                            className="p-1 rounded-md bg-[#4caf7d]/20 text-[#4caf7d] hover:bg-[#4caf7d]/30 cursor-pointer shrink-0"
+                          >
+                            <svg
+                              className="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingImageId(null)}
+                            title="Cancel"
+                            className="p-1 rounded-md bg-[#e06060]/20 text-[#e06060] hover:bg-[#e06060]/30 cursor-pointer shrink-0"
+                          >
+                            <svg
+                              className="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M6 18L18 6M6 6l12 12"
+                              />
+                            </svg>
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="flex items-center justify-between gap-1 group/title">
+                          <p
+                            className="text-xs font-semibold text-[#f3ebdd] truncate"
+                            title={friendlyName}
+                          >
+                            {friendlyName}
+                          </p>
+                          {isAuthenticated && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingImageId(image.public_id);
+                                setEditingTitle(image.title || friendlyName);
+                              }}
+                              title="Rename asset"
+                              className="opacity-0 group-hover/title:opacity-100 transition-opacity p-0.5 rounded text-[#8e8374] hover:text-[#d9a55b] cursor-pointer"
+                            >
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.75}
+                                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-2 text-[11px] text-[#8e8374]">
                         {image.width > 0 && image.height > 0 && (
                           <>
@@ -1068,68 +1243,97 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Preserved Relative Path Badge */}
-                    <div className="flex items-center justify-between text-[11px] bg-[#1e1a16] border border-[#2f2923] rounded-lg px-2.5 py-1 text-[#8e8374]">
-                      <div
-                        className="flex items-center gap-1.5 truncate max-w-[180px]"
-                        title={displayRelPath}
-                      >
-                        <FolderIcon className="w-3.5 h-3.5 text-[#d9a55b] shrink-0" />
-                        <span className="truncate font-mono">
-                          {displayRelPath}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyLink(displayRelPath, `path-${image.public_id}`)
-                        }
-                        className="hover:text-[#f3ebdd] transition-colors text-[10px] uppercase font-mono ml-2 shrink-0 cursor-pointer"
-                        title="Copy relative path"
-                      >
-                        {copiedId === `path-${image.public_id}`
-                          ? "Copied"
-                          : "Path"}
-                      </button>
-                    </div>
+                    {isAuthenticated ? (
+                      <>
+                        {/* Preserved Relative Path Badge */}
+                        <div className="flex items-center justify-between text-[11px] bg-[#1e1a16] border border-[#2f2923] rounded-lg px-2.5 py-1 text-[#8e8374]">
+                          <div
+                            className="flex items-center gap-1.5 truncate max-w-[180px]"
+                            title={displayRelPath}
+                          >
+                            <FolderIcon className="w-3.5 h-3.5 text-[#d9a55b] shrink-0" />
+                            <span className="truncate font-mono">
+                              {displayRelPath}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyLink(
+                                displayRelPath,
+                                `path-${image.public_id}`,
+                              )
+                            }
+                            className="hover:text-[#f3ebdd] transition-colors text-[10px] uppercase font-mono ml-2 shrink-0 cursor-pointer"
+                            title="Copy relative path"
+                          >
+                            {copiedId === `path-${image.public_id}`
+                              ? "Copied"
+                              : "Path"}
+                          </button>
+                        </div>
 
-                    {/* URL Snippet */}
-                    <div className="bg-[#1e1a16] border border-[#2f2923] rounded-lg px-2.5 py-1.5">
-                      <p className="text-[11px] text-[#8e8374] truncate font-mono select-all">
-                        {targetUrl}
-                      </p>
-                    </div>
+                        {/* URL Snippet */}
+                        <div className="bg-[#1e1a16] border border-[#2f2923] rounded-lg px-2.5 py-1.5">
+                          <p className="text-[11px] text-[#8e8374] truncate font-mono select-all">
+                            {targetUrl}
+                          </p>
+                        </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => copyLink(targetUrl, image.public_id)}
-                        className={`flex-1 text-xs py-2 px-2.5 rounded-xl font-medium transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                          copiedId === image.public_id
-                            ? "bg-[#4caf7d]/20 text-[#4caf7d] border border-[#4caf7d]/40"
-                            : "bg-[#d9a55b]/10 text-[#d9a55b] hover:bg-[#d9a55b]/20 border border-[#d9a55b]/20"
-                        }`}
-                      >
-                        {copiedId === image.public_id ? (
-                          <>
-                            <svg
-                              className="w-3.5 h-3.5 text-[#4caf7d]"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                            <span>Copied</span>
-                          </>
-                        ) : (
-                          <>
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => copyLink(targetUrl, image.public_id)}
+                            className={`flex-1 text-xs py-2 px-2.5 rounded-xl font-medium transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                              copiedId === image.public_id
+                                ? "bg-[#4caf7d]/20 text-[#4caf7d] border border-[#4caf7d]/40"
+                                : "bg-[#d9a55b]/10 text-[#d9a55b] hover:bg-[#d9a55b]/20 border border-[#d9a55b]/20"
+                            }`}
+                          >
+                            {copiedId === image.public_id ? (
+                              <>
+                                <svg
+                                  className="w-3.5 h-3.5 text-[#4caf7d]"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+                                  />
+                                </svg>
+                                <span>Copy CDN</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => window.open(targetUrl, "_blank")}
+                            className="text-xs p-2 rounded-xl bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#f3ebdd] border border-[#2f2923] transition-colors cursor-pointer"
+                            title="Open full size in new tab"
+                          >
                             <svg
                               className="w-3.5 h-3.5"
                               fill="none"
@@ -1140,65 +1344,65 @@ export default function Home() {
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2}
-                                d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
+                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
                               />
                             </svg>
-                            <span>Copy CDN</span>
-                          </>
-                        )}
-                      </button>
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => window.open(targetUrl, "_blank")}
-                        className="text-xs p-2 rounded-xl bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#f3ebdd] border border-[#2f2923] transition-colors cursor-pointer"
-                        title="Open full size in new tab"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                          />
-                        </svg>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => deleteImage(image.public_id)}
-                        disabled={deletingId === image.public_id}
-                        className="text-xs p-2 rounded-xl bg-[#e06060]/10 hover:bg-[#e06060]/20 text-[#e06060] border border-[#e06060]/20 transition-colors disabled:opacity-50 cursor-pointer"
-                        title="Delete asset"
-                      >
-                        {deletingId === image.public_id ? (
-                          <svg
-                            className="w-3.5 h-3.5 animate-spin text-[#e06060]"
-                            fill="none"
-                            viewBox="0 0 24 24"
+                          <button
+                            type="button"
+                            onClick={() => deleteImage(image.public_id)}
+                            disabled={deletingId === image.public_id}
+                            className="text-xs p-2 rounded-xl bg-[#e06060]/10 hover:bg-[#e06060]/20 text-[#e06060] border border-[#e06060]/20 transition-colors disabled:opacity-50 cursor-pointer"
+                            title="Delete asset"
                           >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            />
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                            />
-                          </svg>
-                        ) : (
+                            {deletingId === image.public_id ? (
+                              <svg
+                                className="w-3.5 h-3.5 animate-spin text-[#e06060]"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="w-3.5 h-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(image)}
+                          className="w-full text-xs py-2 px-3 rounded-xl font-medium bg-[#1e1a16] hover:bg-[#27221c] text-[#f3ebdd] border border-[#2f2923] hover:border-[#d9a55b]/40 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                        >
                           <svg
-                            className="w-3.5 h-3.5"
+                            className="w-3.5 h-3.5 text-[#d9a55b]"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -1207,12 +1411,19 @@ export default function Home() {
                               strokeLinecap="round"
                               strokeLinejoin="round"
                               strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                             />
                           </svg>
-                        )}
-                      </button>
-                    </div>
+                          <span>View Asset</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1237,7 +1448,9 @@ export default function Home() {
             <div className="p-4 border-b border-[#2f2923] flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-[#f3ebdd] truncate">
-                  {previewImage.filename || previewImage.public_id}
+                  {previewImage.title ||
+                    previewImage.filename ||
+                    previewImage.public_id}
                 </p>
                 {(previewImage.relative_path || previewImage.folder) && (
                   <p className="text-xs text-[#d9a55b] flex items-center gap-1.5 mt-0.5">
@@ -1290,7 +1503,7 @@ export default function Home() {
                 {previewImage.format.toUpperCase()}
               </span>
               <div className="flex gap-2">
-                {previewImage.relative_path && (
+                {isAuthenticated && previewImage.relative_path && (
                   <button
                     type="button"
                     onClick={() =>
@@ -1299,40 +1512,37 @@ export default function Home() {
                         `modal-path-${previewImage.public_id}`,
                       )
                     }
-                    className="px-3 py-1.5 rounded-lg bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#f3ebdd] border border-[#2f2923]"
+                    className="px-3 py-1.5 rounded-lg bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#f3ebdd] border border-[#2f2923] cursor-pointer"
                   >
                     {copiedId === `modal-path-${previewImage.public_id}`
                       ? "Copied Path!"
                       : "Copy Path"}
                   </button>
                 )}
+                {isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyLink(
+                        previewImage.secure_url ||
+                          previewImage.local_url ||
+                          previewImage.url,
+                        previewImage.public_id,
+                      )
+                    }
+                    className="px-3.5 py-1.5 rounded-lg bg-[#d9a55b] text-[#0e0c0a] font-semibold cursor-pointer"
+                  >
+                    {copiedId === previewImage.public_id
+                      ? "Copied!"
+                      : "Copy URL"}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() =>
-                    copyLink(
-                      previewImage.secure_url ||
-                        previewImage.local_url ||
-                        previewImage.url,
-                      previewImage.public_id,
-                    )
-                  }
-                  className="px-3.5 py-1.5 rounded-lg bg-[#d9a55b] text-[#0e0c0a] font-semibold"
+                  onClick={() => setPreviewImage(null)}
+                  className="px-3.5 py-1.5 rounded-lg bg-[#1e1a16] text-[#f3ebdd] border border-[#2f2923] hover:bg-[#27221c] transition-colors cursor-pointer"
                 >
-                  {copiedId === previewImage.public_id ? "Copied!" : "Copy URL"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    window.open(
-                      previewImage.secure_url ||
-                        previewImage.local_url ||
-                        previewImage.url,
-                      "_blank",
-                    )
-                  }
-                  className="px-3.5 py-1.5 rounded-lg bg-[#1e1a16] text-[#f3ebdd] border border-[#2f2923]"
-                >
-                  Open in New Tab
+                  Close
                 </button>
               </div>
             </div>

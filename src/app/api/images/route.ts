@@ -6,10 +6,15 @@ import {
   listFolders,
   listImages,
   saveImageRecord,
+  updateImageTitle,
 } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
+    const token = request.cookies.get("auth_token")?.value;
+    const isAuthenticated =
+      Boolean(token) || process.env.DISABLE_AUTH === "true";
+
     const { searchParams } = request.nextUrl;
     const requestedFolder = searchParams.get("folder")?.trim() || "";
     const searchQuery = searchParams.get("search")?.trim() || "";
@@ -114,6 +119,7 @@ export async function GET(request: NextRequest) {
           folder: img.folder_path,
           folder_path: img.folder_path,
           filename: img.filename,
+          title: img.title || undefined,
           relative_path: img.relative_path,
         }));
 
@@ -216,6 +222,7 @@ export async function GET(request: NextRequest) {
             folderDetails: extractedFolders,
             folderTree: [],
             total: filtered.length,
+            isAuthenticated,
           });
         }
       } catch (cloudErr) {
@@ -229,6 +236,7 @@ export async function GET(request: NextRequest) {
       folderDetails: foldersList,
       folderTree,
       total: formattedImages.length,
+      isAuthenticated,
     });
   } catch (error) {
     console.error("List error:", error);
@@ -239,6 +247,45 @@ export async function GET(request: NextRequest) {
       folderDetails: [],
       folderTree: [],
       total: 0,
+      isAuthenticated: false,
     });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const token = request.cookies.get("auth_token")?.value;
+    const isAuthed = Boolean(token) || process.env.DISABLE_AUTH === "true";
+    if (!isAuthed) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { public_id, title } = await request.json();
+    if (!public_id || typeof title !== "string") {
+      return NextResponse.json(
+        { error: "public_id and title are required" },
+        { status: 400 },
+      );
+    }
+
+    const success = updateImageTitle(public_id, title);
+    if (!success) {
+      return NextResponse.json(
+        { error: "Failed to update image title in database" },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      public_id,
+      title: title.trim(),
+    });
+  } catch (error) {
+    console.error("Rename error:", error);
+    return NextResponse.json(
+      { error: "Failed to rename image" },
+      { status: 500 },
+    );
   }
 }

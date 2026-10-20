@@ -16,6 +16,7 @@ export interface ImageRecord {
   id?: number;
   public_id: string;
   filename: string;
+  title?: string;
   relative_path: string;
   folder_path: string;
   local_url: string;
@@ -82,6 +83,7 @@ function initSchema(db: DatabaseSync): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       public_id TEXT UNIQUE NOT NULL,
       filename TEXT NOT NULL,
+      title TEXT,
       relative_path TEXT NOT NULL,
       folder_path TEXT NOT NULL,
       local_url TEXT NOT NULL,
@@ -97,6 +99,12 @@ function initSchema(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_images_relative ON images(relative_path);
     CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_path);
   `);
+
+  try {
+    db.exec("ALTER TABLE images ADD COLUMN title TEXT;");
+  } catch {
+    // Column already exists
+  }
 }
 
 export function getDb(): DatabaseSync | null {
@@ -179,12 +187,13 @@ export function saveImageRecord(img: ImageRecord): void {
   try {
     const stmt = db.prepare(`
       INSERT INTO images (
-        public_id, filename, relative_path, folder_path,
+        public_id, filename, title, relative_path, folder_path,
         local_url, secure_url, width, height, format, bytes, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(public_id) DO UPDATE SET
         filename = excluded.filename,
+        title = COALESCE(excluded.title, images.title),
         relative_path = excluded.relative_path,
         folder_path = excluded.folder_path,
         local_url = excluded.local_url,
@@ -199,6 +208,7 @@ export function saveImageRecord(img: ImageRecord): void {
     stmt.run(
       img.public_id,
       img.filename,
+      img.title ?? null,
       img.relative_path,
       img.folder_path,
       img.local_url,
@@ -211,6 +221,22 @@ export function saveImageRecord(img: ImageRecord): void {
     );
   } catch (err) {
     console.warn("Failed to save image record to SQLite:", err);
+  }
+}
+
+/** Update the custom title / display name of an asset by public_id */
+export function updateImageTitle(public_id: string, title: string): boolean {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const stmt = db.prepare(`
+      UPDATE images SET title = ? WHERE public_id = ?;
+    `);
+    stmt.run(title.trim(), public_id);
+    return true;
+  } catch (err) {
+    console.warn("Failed to update image title in SQLite:", err);
+    return false;
   }
 }
 

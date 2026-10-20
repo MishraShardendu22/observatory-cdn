@@ -3,13 +3,29 @@ import { type NextRequest, NextResponse } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow login page, login API, or if authentication is explicitly disabled
+  // Always allow Next.js internals, static assets, and favicon
   if (
-    process.env.DISABLE_AUTH === "true" ||
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico" ||
+    pathname.startsWith("/uploads/")
+  ) {
+    return NextResponse.next();
+  }
+
+  // If authentication is explicitly disabled
+  if (process.env.DISABLE_AUTH === "true") {
+    return NextResponse.next();
+  }
+
+  // Public endpoints accessible to guests:
+  // - /login and /api/login
+  // - / (public asset gallery)
+  // - GET /api/images (public asset catalog)
+  if (
     pathname === "/login" ||
     pathname === "/api/login" ||
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico"
+    pathname === "/" ||
+    (pathname === "/api/images" && request.method === "GET")
   ) {
     return NextResponse.next();
   }
@@ -17,7 +33,7 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get("auth_token")?.value;
 
   if (!token) {
-    // Redirect to login for pages, return 401 for API
+    // Return 401 for mutation APIs, redirect to login for protected pages
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
