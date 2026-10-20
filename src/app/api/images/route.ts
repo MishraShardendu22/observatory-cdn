@@ -9,6 +9,9 @@ import {
   updateImageTitle,
 } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   try {
     const token = request.cookies.get("auth_token")?.value;
@@ -216,39 +219,60 @@ export async function GET(request: NextRequest) {
             }),
           );
 
-          return NextResponse.json({
-            images: filtered,
-            folders: extractedFolders.map((f) => f.path),
-            folderDetails: extractedFolders,
-            folderTree: [],
-            total: filtered.length,
-            isAuthenticated,
-          });
+          return NextResponse.json(
+            {
+              images: filtered,
+              folders: extractedFolders.map((f) => f.path),
+              folderDetails: extractedFolders,
+              folderTree: [],
+              total: filtered.length,
+              isAuthenticated,
+            },
+            {
+              headers: {
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+              },
+            },
+          );
         }
       } catch (cloudErr) {
         console.warn("Direct Cloudinary fetch failed:", cloudErr);
       }
     }
 
-    return NextResponse.json({
-      images: formattedImages,
-      folders: foldersList.map((f) => f.path),
-      folderDetails: foldersList,
-      folderTree,
-      total: formattedImages.length,
-      isAuthenticated,
-    });
+    return NextResponse.json(
+      {
+        images: formattedImages,
+        folders: foldersList.map((f) => f.path),
+        folderDetails: foldersList,
+        folderTree,
+        total: formattedImages.length,
+        isAuthenticated,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
+    );
   } catch (error) {
     console.error("List error:", error);
     // Return empty result rather than 500 so UI displays properly with empty state
-    return NextResponse.json({
-      images: [],
-      folders: [],
-      folderDetails: [],
-      folderTree: [],
-      total: 0,
-      isAuthenticated: false,
-    });
+    return NextResponse.json(
+      {
+        images: [],
+        folders: [],
+        folderDetails: [],
+        folderTree: [],
+        total: 0,
+        isAuthenticated: false,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      },
+    );
   }
 }
 

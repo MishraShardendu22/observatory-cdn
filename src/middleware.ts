@@ -25,7 +25,8 @@ export function middleware(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/api/login" ||
     pathname === "/" ||
-    (pathname === "/api/images" && request.method === "GET")
+    (pathname === "/api/images" &&
+      (request.method === "GET" || request.method === "HEAD"))
   ) {
     return NextResponse.next();
   }

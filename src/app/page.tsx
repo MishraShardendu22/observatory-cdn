@@ -81,6 +81,8 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [editingImageId, setEditingImageId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>("");
+  const [modalEditing, setModalEditing] = useState<boolean>(false);
+  const [modalTitle, setModalTitle] = useState<string>("");
   const [savingTitle, setSavingTitle] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -106,6 +108,7 @@ export default function Home() {
   const handleRename = async (public_id: string, newTitle: string) => {
     if (!newTitle.trim()) {
       setEditingImageId(null);
+      setModalEditing(false);
       return;
     }
     setSavingTitle(true);
@@ -123,12 +126,18 @@ export default function Home() {
               : img,
           ),
         );
+        setPreviewImage((prev) =>
+          prev && prev.public_id === public_id
+            ? { ...prev, title: newTitle.trim() }
+            : prev,
+        );
       }
     } catch (err) {
       console.error("Rename failed:", err);
     } finally {
       setSavingTitle(false);
       setEditingImageId(null);
+      setModalEditing(false);
     }
   };
 
@@ -1195,10 +1204,24 @@ export default function Home() {
                           </button>
                         </form>
                       ) : (
-                        <div className="flex items-center justify-between gap-1 group/title">
+                        <div className="flex items-center justify-between gap-1.5 group/title">
                           <p
-                            className="text-xs font-semibold text-[#f3ebdd] truncate"
-                            title={friendlyName}
+                            className={`text-xs font-semibold text-[#f3ebdd] truncate ${
+                              isAuthenticated
+                                ? "cursor-pointer hover:text-[#d9a55b] transition-colors"
+                                : ""
+                            }`}
+                            title={
+                              isAuthenticated
+                                ? `Click to rename: ${friendlyName}`
+                                : friendlyName
+                            }
+                            onClick={() => {
+                              if (isAuthenticated) {
+                                setEditingImageId(image.public_id);
+                                setEditingTitle(image.title || friendlyName);
+                              }
+                            }}
                           >
                             {friendlyName}
                           </p>
@@ -1210,10 +1233,10 @@ export default function Home() {
                                 setEditingTitle(image.title || friendlyName);
                               }}
                               title="Rename asset"
-                              className="opacity-0 group-hover/title:opacity-100 transition-opacity p-0.5 rounded text-[#8e8374] hover:text-[#d9a55b] cursor-pointer"
+                              className="p-1 rounded text-[#8e8374] hover:text-[#d9a55b] hover:bg-[#27221c] transition-colors cursor-pointer shrink-0"
                             >
                               <svg
-                                className="w-3 h-3"
+                                className="w-3.5 h-3.5"
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -1330,6 +1353,30 @@ export default function Home() {
 
                           <button
                             type="button"
+                            onClick={() => {
+                              setEditingImageId(image.public_id);
+                              setEditingTitle(image.title || friendlyName);
+                            }}
+                            className="text-xs p-2 rounded-xl bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#d9a55b] border border-[#2f2923] hover:border-[#d9a55b]/40 transition-colors cursor-pointer"
+                            title="Rename asset"
+                          >
+                            <svg
+                              className="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => window.open(targetUrl, "_blank")}
                             className="text-xs p-2 rounded-xl bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#f3ebdd] border border-[#2f2923] transition-colors cursor-pointer"
                             title="Open full size in new tab"
@@ -1437,7 +1484,10 @@ export default function Home() {
         <div
           role="dialog"
           aria-modal="true"
-          onClick={() => setPreviewImage(null)}
+          onClick={() => {
+            setPreviewImage(null);
+            setModalEditing(false);
+          }}
           className="fixed inset-0 z-50 bg-[#0e0c0a]/90 backdrop-blur-md flex items-center justify-center p-4"
         >
           <div
@@ -1445,27 +1495,125 @@ export default function Home() {
             onClick={(e) => e.stopPropagation()}
             className="max-w-4xl w-full bg-[#161311] border border-[#2f2923] rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
           >
-            <div className="p-4 border-b border-[#2f2923] flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-[#f3ebdd] truncate">
-                  {previewImage.title ||
-                    previewImage.filename ||
-                    previewImage.public_id}
-                </p>
-                {(previewImage.relative_path || previewImage.folder) && (
-                  <p className="text-xs text-[#d9a55b] flex items-center gap-1.5 mt-0.5">
-                    <FolderIcon className="w-3.5 h-3.5 text-[#d9a55b]" />
-                    <span>
-                      {previewImage.relative_path || previewImage.folder}
-                    </span>
-                  </p>
-                )}
-              </div>
+            <div className="p-4 border-b border-[#2f2923] flex items-center justify-between gap-3">
+              {modalEditing ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (previewImage) {
+                      handleRename(previewImage.public_id, modalTitle);
+                    }
+                  }}
+                  className="flex items-center gap-2 flex-1 max-w-lg"
+                >
+                  <input
+                    type="text"
+                    value={modalTitle}
+                    onChange={(e) => setModalTitle(e.target.value)}
+                    className="text-sm bg-[#12100e] text-[#f3ebdd] border border-[#d9a55b] rounded-lg px-2.5 py-1.5 focus:outline-none w-full"
+                    placeholder="Enter friendly asset title"
+                    autoFocus
+                    disabled={savingTitle}
+                  />
+                  <button
+                    type="submit"
+                    disabled={savingTitle}
+                    className="px-3 py-1.5 rounded-lg bg-[#d9a55b] text-[#0e0c0a] font-medium hover:bg-[#e6b66e] cursor-pointer shrink-0 disabled:opacity-50 text-xs"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalEditing(false)}
+                    disabled={savingTitle}
+                    className="px-3 py-1.5 rounded-lg bg-[#1e1a16] text-[#8e8374] hover:text-[#f3ebdd] border border-[#2f2923] cursor-pointer shrink-0 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p
+                      className={`text-sm font-semibold text-[#f3ebdd] truncate ${
+                        isAuthenticated
+                          ? "cursor-pointer hover:text-[#d9a55b] transition-colors"
+                          : ""
+                      }`}
+                      title={
+                        isAuthenticated
+                          ? `Click to rename: ${
+                              previewImage.title ||
+                              previewImage.filename ||
+                              previewImage.public_id
+                            }`
+                          : previewImage.title ||
+                            previewImage.filename ||
+                            previewImage.public_id
+                      }
+                      onClick={() => {
+                        if (isAuthenticated) {
+                          setModalTitle(
+                            previewImage.title ||
+                              previewImage.filename ||
+                              previewImage.public_id,
+                          );
+                          setModalEditing(true);
+                        }
+                      }}
+                    >
+                      {previewImage.title ||
+                        previewImage.filename ||
+                        previewImage.public_id}
+                    </p>
+                    {isAuthenticated && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalTitle(
+                            previewImage.title ||
+                              previewImage.filename ||
+                              previewImage.public_id,
+                          );
+                          setModalEditing(true);
+                        }}
+                        title="Rename asset"
+                        className="p-1 rounded-md text-[#8e8374] hover:text-[#d9a55b] hover:bg-[#27221c] transition-colors cursor-pointer shrink-0"
+                      >
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.75}
+                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {(previewImage.relative_path || previewImage.folder) && (
+                    <p className="text-xs text-[#d9a55b] flex items-center gap-1.5 mt-0.5">
+                      <FolderIcon className="w-3.5 h-3.5 text-[#d9a55b]" />
+                      <span>
+                        {previewImage.relative_path || previewImage.folder}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              )}
               <button
                 type="button"
-                onClick={() => setPreviewImage(null)}
+                onClick={() => {
+                  setPreviewImage(null);
+                  setModalEditing(false);
+                }}
                 aria-label="Close preview"
-                className="w-8 h-8 rounded-lg bg-[#1e1a16] text-[#b9ae9d] hover:text-[#f3ebdd] flex items-center justify-center border border-[#2f2923] cursor-pointer transition-colors"
+                className="w-8 h-8 rounded-lg bg-[#1e1a16] text-[#b9ae9d] hover:text-[#f3ebdd] flex items-center justify-center border border-[#2f2923] cursor-pointer transition-colors shrink-0"
               >
                 <svg
                   className="w-4 h-4"
@@ -1503,6 +1651,36 @@ export default function Home() {
                 {previewImage.format.toUpperCase()}
               </span>
               <div className="flex gap-2">
+                {isAuthenticated && !modalEditing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalTitle(
+                        previewImage.title ||
+                          previewImage.filename ||
+                          previewImage.public_id,
+                      );
+                      setModalEditing(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#1e1a16] hover:bg-[#27221c] text-[#b9ae9d] hover:text-[#d9a55b] border border-[#2f2923] cursor-pointer flex items-center gap-1.5 transition-colors"
+                    title="Rename this asset"
+                  >
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                      />
+                    </svg>
+                    <span>Rename</span>
+                  </button>
+                )}
                 {isAuthenticated && previewImage.relative_path && (
                   <button
                     type="button"
@@ -1539,7 +1717,10 @@ export default function Home() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setPreviewImage(null)}
+                  onClick={() => {
+                    setPreviewImage(null);
+                    setModalEditing(false);
+                  }}
                   className="px-3.5 py-1.5 rounded-lg bg-[#1e1a16] text-[#f3ebdd] border border-[#2f2923] hover:bg-[#27221c] transition-colors cursor-pointer"
                 >
                   Close
