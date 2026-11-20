@@ -1,6 +1,23 @@
 import { type NextRequest, NextResponse } from "next/server";
+import {
+  clearLoginFailures,
+  clientAddress,
+  createSessionToken,
+  loginBlocked,
+  recordLoginFailure,
+  SESSION_COOKIE,
+  SESSION_MAX_AGE_S,
+  safeEqual,
+} from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
+  const address = clientAddress(request);
+  if (loginBlocked(address)) {
+    return NextResponse.json(
+      { error: "Too many failed attempts. Try again in 15 minutes." },
+      { status: 429 },
+    );
+  }
   try {
     const { username, password } = await request.json();
 
@@ -17,22 +34,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (username === validUsername && password === validPassword) {
-      const token = Buffer.from(`${username}:${Date.now()}`).toString("base64");
+    const [userOk, passOk] = await Promise.all([
+      safeEqual(String(username ?? ""), validUsername),
+      safeEqual(String(password ?? ""), validPassword),
+    ]);
+    if (userOk && passOk) {
+      clearLoginFailures(address);
+      const token = await createSessionToken(validUsername);
 
       const response = NextResponse.json({ success: true });
 
-      response.cookies.set("auth_token", token, {
+      response.cookies.set(SESSION_COOKIE, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
-        maxAge: 60 * 60 * 24 * 7, // 7 days
+        maxAge: SESSION_MAX_AGE_S,
       });
 
       return response;
     }
 
+    recordLoginFailure(address);
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   } catch (error) {
     console.error("Login error:", error);

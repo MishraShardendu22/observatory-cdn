@@ -18,7 +18,7 @@ The system is optimized for both traditional server environments and serverless 
 - **Dual-Layer Storage Architecture**: Assets are archived to disk and indexed in SQLite, while simultaneously uploaded to Cloudinary CDN for optimized global edge delivery.
 - **Fast Hierarchical Search & Filtering**: Query assets by directory path, subfolder scope, filename, or format with instant recursive breadcrumb navigation.
 - **Serverless & Container Resilient**: Automatically switches SQLite and disk writes to temporary storage (`os.tmpdir()`) or in-memory tables when deployed in read-only serverless runtimes.
-- **Strict Environment Authentication**: All routes and mutations are protected by Next.js middleware. Authentication strictly validates against server-configured credentials, preventing hardcoded or default access.
+- **Strict Environment Authentication**: All routes and mutations are protected by the Next.js proxy (`src/proxy.ts`). Logins check the server-configured credentials (5 failed tries per address lock it out for 15 minutes) and get an HMAC-signed session cookie; scripts can use an API token instead. Changes made with the cookie must come from the site's own pages.
 - **Enterprise Design System**: High-density Observatory theme featuring an ambient warm zinc dark palette (`#0e0c0a`, `#161311`, `#d9a55b`) with pure SVG vector icons and zero emoji dependencies.
 
 ---
@@ -52,11 +52,12 @@ Image-Upload/
 │   │   ├── layout.tsx               # Root application layout
 │   │   └── page.tsx                 # Main Observatory dashboard & upload interface
 │   ├── lib/
+│   │   ├── auth.ts                  # Signed sessions, API token, same-origin check, login throttling
 │   │   ├── cloudinary.ts            # Cloudinary client initialization
 │   │   └── db.ts                    # SQLite connection, schema, and query abstractions
 │   ├── types/
 │   │   └── sqlite.d.ts              # TypeScript definitions for node:sqlite
-│   └── middleware.ts                # Route protection and authentication barrier
+│   └── proxy.ts                     # Route protection (Next.js 16 proxy, formerly middleware)
 ├── scripts/
 │   ├── test-folder-upload.mjs       # Automated SQLite schema and hierarchy validation test
 │   └── upload-local-folder.mjs      # CLI utility to recursively batch upload local directories
@@ -81,6 +82,8 @@ cp sample.env .env.local
 | :--- | :--- | :--- |
 | `AUTH_USERNAME` | Yes | Authorized username for administrative access |
 | `AUTH_PASSWORD` | Yes | Authorized password for administrative access |
+| `AUTH_SECRET` | Optional | Key that signs the login cookie (`openssl rand -base64 48`). Defaults to a key derived from `AUTH_USERNAME` + `AUTH_PASSWORD` |
+| `CDN_API_TOKEN` | Optional | Token (32+ characters) for scripts: `Authorization: Bearer <token>`. Token access is off when unset |
 | `CLOUDINARY_URL` | Optional | Full Cloudinary connection string (`cloudinary://key:secret@cloud`) |
 | `CLOUDINARY_CLOUD_NAME` | Optional | Alternative Cloudinary cloud name |
 | `CLOUDINARY_API_KEY` | Optional | Alternative Cloudinary API key |
@@ -155,7 +158,14 @@ node scripts/upload-local-folder.mjs ../Design Design
 ### Authentication
 
 - **`POST /api/login`**: Authenticates credentials against `AUTH_USERNAME` and `AUTH_PASSWORD`. Sets an HTTP-only session cookie upon success.
-- **`POST /api/logout`**: Invalidates the session cookie.
+- **`POST /api/logout`**: Clears the session cookie in this browser. Sessions are not stored on the server, so to sign every browser out, change `AUTH_SECRET` (or, without it, `AUTH_PASSWORD`).
+- **API token**: with `CDN_API_TOKEN` set, every protected route also accepts `Authorization: Bearer <token>` instead of the cookie, for example:
+
+  ```bash
+  curl -H "Authorization: Bearer $CDN_API_TOKEN" -F file=@logo.png -F folder=blog https://<your-cdn>/api/upload
+  ```
+
+  The session cookie is signed (HMAC-SHA256) and expires after 7 days; any other cookie value is rejected.
 
 ### Assets Management
 

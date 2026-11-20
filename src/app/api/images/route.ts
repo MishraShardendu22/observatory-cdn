@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { isAuthenticated as checkAuth } from "@/lib/auth";
 import cloudinary from "@/lib/cloudinary";
 import {
   getFolderTree,
@@ -12,11 +13,39 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// Anyone can open the gallery, and with an empty index every request would
+// call Cloudinary's Admin API (which is rate limited). Keep the last answer
+// for a minute per server instance.
+const CLOUDINARY_LIST_TTL_MS = 60_000;
+let cloudinaryList: {
+  at: number;
+  // biome-ignore lint/suspicious/noExplicitAny: Cloudinary's response type
+  result: Promise<any>;
+} | null = null;
+function listCloudinaryImages() {
+  if (
+    !cloudinaryList ||
+    Date.now() - cloudinaryList.at > CLOUDINARY_LIST_TTL_MS
+  ) {
+    const result = cloudinary.api
+      .resources({
+        type: "upload",
+        prefix: "image-upload-app",
+        resource_type: "image",
+        max_results: 500,
+      })
+      .catch((err: unknown) => {
+        cloudinaryList = null;
+        throw err;
+      });
+    cloudinaryList = { at: Date.now(), result };
+  }
+  return cloudinaryList.result;
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("auth_token")?.value;
-    const isAuthenticated =
-      Boolean(token) || process.env.DISABLE_AUTH === "true";
+    const isAuthenticated = await checkAuth(request);
 
     const { searchParams } = request.nextUrl;
     const requestedFolder = searchParams.get("folder")?.trim() || "";
@@ -45,12 +74,7 @@ export async function GET(request: NextRequest) {
 
     if (totalCount === 0 && hasCloudinary) {
       try {
-        const result = await cloudinary.api.resources({
-          type: "upload",
-          prefix: "image-upload-app",
-          resource_type: "image",
-          max_results: 500,
-        });
+        const result = await listCloudinaryImages();
 
         if (result?.resources?.length) {
           for (const resource of result.resources) {
@@ -136,12 +160,7 @@ export async function GET(request: NextRequest) {
     // 3. Resilient Fallback: If DB query yielded 0 images and Cloudinary is configured, fetch directly from Cloudinary
     if (formattedImages.length === 0 && hasCloudinary) {
       try {
-        const result = await cloudinary.api.resources({
-          type: "upload",
-          prefix: "image-upload-app",
-          resource_type: "image",
-          max_results: 500,
-        });
+        const result = await listCloudinaryImages();
 
         if (result?.resources?.length) {
           const cloudImages = result.resources.map(
@@ -278,8 +297,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const token = request.cookies.get("auth_token")?.value;
-    const isAuthed = Boolean(token) || process.env.DISABLE_AUTH === "true";
+    const isAuthed = await checkAuth(request);
     if (!isAuthed) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
