@@ -170,8 +170,8 @@ node scripts/upload-local-folder.mjs ../Design Design
 ### Assets Management
 
 - **`GET /api/images`**: Lists indexed images. Supports `?folder=<path>` and `?search=<query>` query parameters.
-- **`POST /api/upload`**: Multipart form upload accepting `file`, `folder`, and `relativePath`.
-- **`POST /api/delete`**: Deletes an asset by `public_id` from both SQLite and Cloudinary.
+- **`POST /api/upload`**: Multipart form upload accepting `file`, `folder`, and `relativePath`. On Cloudinary the URL is `.../image-upload-app/<folder>/<file name>`; uploading the same folder and file name again replaces that image and clears its cached copies.
+- **`POST /api/delete`**: Deletes an asset by `public_id` from both SQLite and Cloudinary, and asks Cloudinary to drop its CDN copies (that can take a few minutes).
 
 ---
 

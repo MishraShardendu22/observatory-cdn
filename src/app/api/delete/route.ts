@@ -49,7 +49,9 @@ export async function POST(request: NextRequest) {
 
     if (hasCloudinary && !public_id.startsWith("local/")) {
       try {
-        await cloudinary.uploader.destroy(public_id);
+        // invalidate: without it Cloudinary's CDN keeps serving the deleted
+        // image from cache.
+        await cloudinary.uploader.destroy(public_id, { invalidate: true });
       } catch (cloudErr) {
         console.warn(
           `Cloudinary destruction skipped/failed for ${public_id}:`,

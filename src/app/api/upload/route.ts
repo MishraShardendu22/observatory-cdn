@@ -126,12 +126,18 @@ export async function POST(request: NextRequest) {
 
         const dataUri = `data:${mimeType};base64,${base64}`;
 
+        // A data URI carries no file name, so use_filename alone gave every
+        // upload a random id. filename_override makes the URL
+        // ".../<folder>/<name>.<ext>"; the same folder + name replaces the
+        // old image, and invalidate clears Cloudinary's CDN copies of it.
         const result = await cloudinary.uploader.upload(dataUri, {
           folder: targetFolder,
           resource_type: "auto",
           use_filename: true,
+          filename_override: safeFilename,
           unique_filename: false,
           overwrite: true,
+          invalidate: true,
         });
 
         publicId = result.public_id;
