@@ -91,6 +91,7 @@ async function uploadFile(item, index, total) {
       use_filename: true,
       unique_filename: false,
       overwrite: true,
+      invalidate: true,
     });
 
     console.log(`[OK] DONE`);
