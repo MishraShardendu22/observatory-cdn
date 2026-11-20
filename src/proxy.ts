@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { isAuthenticated } from "@/lib/auth";
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Always allow Next.js internals, static assets, and favicon
@@ -18,12 +19,14 @@ export function middleware(request: NextRequest) {
   }
 
   // Public endpoints accessible to guests:
-  // - /login and /api/login
+  // - /login, /api/login and /api/logout (logout must clear a cookie that
+  //   no longer verifies, e.g. after the key changed)
   // - / (public asset gallery)
   // - GET /api/images (public asset catalog)
   if (
     pathname === "/login" ||
     pathname === "/api/login" ||
+    pathname === "/api/logout" ||
     pathname === "/" ||
     (pathname === "/api/images" &&
       (request.method === "GET" || request.method === "HEAD"))
@@ -31,10 +34,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = request.cookies.get("auth_token")?.value;
-
-  if (!token) {
-    // Return 401 for mutation APIs, redirect to login for protected pages
+  // Valid bearer token, or a valid session cookie (on a change, sent from
+  // this site's own pages)
+  if (!(await isAuthenticated(request))) {
+    // Return 401 for APIs, redirect to login for protected pages
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
