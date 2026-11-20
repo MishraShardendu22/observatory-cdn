@@ -28,26 +28,38 @@ export async function GET(
       return new NextResponse("File path required", { status: 400 });
     }
 
-    // Sanitize and prevent directory traversal
-    const safeSegments = segments.filter(
-      (s) => s && s !== "." && s !== ".." && !s.includes("\\"),
-    );
+    // Each segment arrives URL-decoded, so one segment can hold "../.." or
+    // "a/b": reject those outright, then check that the resolved path is
+    // still inside public/uploads, and serve only known image types.
+    if (
+      segments.some(
+        (s) =>
+          !s ||
+          s === "." ||
+          s === ".." ||
+          s.includes("/") ||
+          s.includes("\\") ||
+          s.includes("\0"),
+      )
+    ) {
+      return new NextResponse("Not Found", { status: 404 });
+    }
 
-    const filePath = path.join(
-      process.cwd(),
-      "public",
-      "uploads",
-      ...safeSegments,
-    );
+    const uploadsDir = path.resolve(process.cwd(), "public", "uploads");
+    const filePath = path.resolve(uploadsDir, ...segments);
+    const ext = path.extname(filePath).replace(/^\./, "").toLowerCase();
+    if (!filePath.startsWith(uploadsDir + path.sep) || !MIME_MAP[ext]) {
+      return new NextResponse("Not Found", { status: 404 });
+    }
 
     const buffer = await fs.readFile(filePath);
-    const ext = path.extname(filePath).replace(/^\./, "").toLowerCase();
-    const contentType = MIME_MAP[ext] || "application/octet-stream";
+    const contentType = MIME_MAP[ext];
 
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {
